@@ -12,6 +12,10 @@ import (
 	yaml "gopkg.in/yaml.v2"
 )
 
+const (
+	DockerWorkspaceFileName = "docker-workspace.yml"
+)
+
 func main() {
 	setupInitCmd()
 	setupResumeCmd()
@@ -28,9 +32,18 @@ func setupInitCmd() {
 }
 func setupResumeCmd() {
 	cmd := kingpin.Command("resume", "resume a previously running workspace")
-	imageName := cmd.Arg("image-name", "name of the docker image").Required().String()
 	cmd.Action(func(ctx *kingpin.ParseContext) error {
-		return runResume(*imageName)
+		wd, err := os.Getwd()
+		if err != nil {
+			return err
+		}
+
+		config, err := fetchDockerWorkspaceConfig(filepath.Join(wd, DockerWorkspaceFileName))
+		if err != nil {
+			return err
+		}
+
+		return runResume(config.ImageName)
 	})
 }
 func setupStopCmd() {
@@ -44,6 +57,22 @@ func setupStopCmd() {
 type environmentFile struct {
 	Name     string
 	Contents []byte
+}
+
+func fetchDockerWorkspaceConfig(path string) (*DockerWorkspaceFile, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	var config *DockerWorkspaceFile
+	err = yaml.NewDecoder(file).Decode(&config)
+	if err != nil {
+		return nil, err
+	}
+
+	return config, nil
 }
 
 // create the docker container, store the name of the docker container in a file
@@ -69,7 +98,7 @@ func runInit(imageName string) error {
 			Contents: []byte(dockerfileContents),
 		},
 		environmentFile{
-			Name:     "docker-workspace.yml",
+			Name:     DockerWorkspaceFileName,
 			Contents: dockerWorkspaceFileBytes,
 		},
 	}
